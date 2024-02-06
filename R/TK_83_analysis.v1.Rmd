@@ -3,9 +3,9 @@ title: ' RNAseq Analysis E. coli strain MG1655 RNAseq on MG1655 reference and LF
 author: "Hernan Lorenzi"
 date: "12/06/2023"
 output:
-  pdf_document: default
   html_document:
     df_print: paged
+  pdf_document: default
 ---
 
 #### Load libraries
@@ -87,7 +87,11 @@ plot_PCA = function(object, color_by="condition",
 #### Load read counts data MG1655
 
 ```{r Loading data}
-all.star <- read.delim2("./data/read_counts_mg_lf82.txt", sep = "\t", header = TRUE, row.names = 1, comment.char = c("#") )
+all.star <- read.delim2("./data/read_counts_mg_lf82.txt", 
+                        sep = "\t", 
+                        header = TRUE, 
+                        row.names = 1, 
+                        comment.char = c("#") )
 
 format_star <- function(star_file){
   names(star_file) <- names(star_file) %>% 
@@ -108,7 +112,7 @@ all <- all.tmp
 
 column_names <- names(all) %>% sort()
 
-all <- select(all, column_names)
+all <- dplyr::select(all, column_names)
 ```
 
 #### Make metadata table from 'all'
@@ -301,7 +305,14 @@ res_WT_vs_Mut_LF82$LF82_IDs <- all.star$LF82_IDs
 dds_res$group <- relevel(dds_res$group, "MG1655_WT")
 dds_res <- DESeq(dds_res)
 my_contrasts <- resultsNames(dds_res)
-res_Mut_vs_WT_MG1655 <- lfcShrink(dds_res, contrast=c("group", "MG1655_Mutant", "MG1655_WT"), type = "ashr", )
+
+res_Mut_vs_WT_MG1655.no_shrink <- results(dds_res, 
+                                  contrast=c("group", "MG1655_Mutant", "MG1655_WT"))
+
+res_Mut_vs_WT_MG1655 <- lfcShrink(dds_res, 
+                                  contrast=c("group", "MG1655_Mutant", "MG1655_WT"), 
+                                  type = "ashr" )
+
 res_Mut_vs_WT_MG1655$MG1655 <- all.star$MG1655_IDs
 
 summary(res_WT_vs_Mut_LF82, alpha = 0.05)
@@ -315,6 +326,14 @@ res_Mut_vs_WT_MG1655_sorted <- sort_and_write_res_table(result_table = res_Mut_v
 
 ```
 
+#### MA plots
+```{r}
+p1 <- ggplot(as.data.frame(res_Mut_vs_WT_MG1655.no_shrink), aes(x=baseMean, y=-log10(pvalue))) + geom_point() + xlim(0,100) + ylim(0,40)
+
+print(p1)
+```
+
+
 ```{r}
 table_counts_normalized <- counts(dds_res, normalized=TRUE)
 write.table(x = as.data.frame(table_counts_normalized), file = "read_counts_deseq2_normalized.txt", sep = "\t", col.names = NA)
@@ -324,7 +343,10 @@ write.table(x = as.data.frame(table_counts_normalized), file = "read_counts_dese
 ```{r}
 # yifL = lptM
 # ybgD b0719 has less than 20 reads across all samples
-genes_of_interest <- c("metE","ampC","fucI","aceB","shiA", "ybgD", "mlaA", "cysZ", "acrZ", "bcr","sppA","yifL","dapF","yigA","xerC","yigB","yobH","ruvA","zapC","mdtK")
+genes_of_interest <- c("metE", "yobH", "lptM", "yigA", "xerC", "yigB", "ampC", "yciY", "shiA", "acrZ", "slt", "fucI", "ybdG", "mlaA", "cysZ", "dpaA", 
+"xseA", "mepK", "aroP", "mnmC", "rsuA", "bcr", "csrD", "sppA", "gltP", "fold", "ruvA", "yacC")
+
+
 ```
 
 
@@ -451,7 +473,7 @@ rlog_res.all_strains.both <- rlog_res.all_strains[sign_genes.both_comp,]
 ensembl_to_symbol.both_comp <- subset(ensembl_to_symbol, Ensembl_ID %in% sign_genes.both_comp)
 rownames(ensembl_to_symbol.both_comp) <- ensembl_to_symbol.both_comp$Ensembl_ID
 
-ensembl_to_symbol.both_comp <- select(ensembl_to_symbol.both_comp, "gene_name")
+ensembl_to_symbol.both_comp <- dplyr::select(ensembl_to_symbol.both_comp, "gene_name")
 
 sort.idx <- match(rownames(ensembl_to_symbol.both_comp),
                         rownames(assay(rlog_res.all_strains.both)) 
@@ -471,6 +493,262 @@ p4.heatmap <- pheatmap(assay(rlog_res.all_strains.both),
 print(p4.heatmap)
 
 ggsave2(filename = "mut_vs_wt_heatmap_both_sign.pdf", plot = p4.heatmap, path = "./Plots", width = 7, height = 10)
+```
+#### Heatmap using Log2FC
+```{r}
+### Make matrix with Log2FC values res_WT_vs_Mut_LF82_sorted res_Mut_vs_WT_MG1655_sorted
+res_WT_vs_Mut_LF82_sorted$row_names <- rownames(res_WT_vs_Mut_LF82_sorted)
+res_Mut_vs_WT_MG1655_sorted$row_names <- rownames(res_Mut_vs_WT_MG1655_sorted)
+
+res_LF82_MG1655_merged <- merge(x = res_WT_vs_Mut_LF82_sorted, 
+                    y = res_Mut_vs_WT_MG1655_sorted, 
+                    by = "row_names", all = TRUE)
+
+res_LF82_MG1655_merged.sig_any <- subset(res_LF82_MG1655_merged, (padj.x <= 0.05 & abs(log2FoldChange.x) >= 1) | (padj.y <= 0.05 & abs(log2FoldChange.y) >= 1) )
+
+# Set colors for heatmap
+my_matrix <- dplyr::select(res_LF82_MG1655_merged.sig_any, c("log2FoldChange.x","log2FoldChange.y"))
+
+paletteLength <- 50
+myBreaks <- c(seq(min(my_matrix), 0, length.out=ceiling(paletteLength/2) + 1), 
+              seq(max(my_matrix)/paletteLength, max(my_matrix), length.out=floor(paletteLength/2)))
+myColor <- colorRampPalette(c("navy", "white", "firebrick3"))(paletteLength)
+
+p5.heatmap <- pheatmap(dplyr::select(res_LF82_MG1655_merged.sig_any, c("log2FoldChange.x","log2FoldChange.y")), 
+          cluster_rows=TRUE, 
+          show_rownames=TRUE,
+          cluster_cols=FALSE, 
+          labels_row=res_LF82_MG1655_merged.sig_any$Gene_name.y,
+          labels_col=c("LF82","MG1655"),
+          fontsize_row = 8,
+          color = myColor,
+          breaks = myBreaks,
+          main = "Log2 Fold Change\npadj <= 0.05 & |log2FC| >= 1\nGenes significant in either LF82 or MG1655")
+
+print(p5.heatmap)
+
+ggsave2(filename = "Log2FC_heatmap_sign_either.pdf", plot = p5.heatmap, path = "./Plots", width = 7, height = 25)
+
+res_LF82_MG1655_merged.sig_all <- subset(res_LF82_MG1655_merged, (padj.x <= 0.05 & abs(log2FoldChange.x) >= 1) & (padj.y <= 0.05 & abs(log2FoldChange.y) >= 1) )
+
+# Set colors for heatmap
+my_matrix <- dplyr::select(res_LF82_MG1655_merged.sig_all, c("log2FoldChange.x","log2FoldChange.y"))
+
+paletteLength <- 50
+myBreaks <- c(seq(min(my_matrix), 0, length.out=ceiling(paletteLength/2) + 1), 
+              seq(max(my_matrix)/paletteLength, max(my_matrix), length.out=floor(paletteLength/2)))
+myColor <- colorRampPalette(c("navy", "white", "firebrick3"))(paletteLength)
+
+p6.heatmap <- pheatmap(my_matrix, 
+          cluster_rows=TRUE, 
+          show_rownames=TRUE,
+          cluster_cols=FALSE, 
+          labels_row=res_LF82_MG1655_merged.sig_all$Gene_name.y,
+          labels_col=c("LF82","MG1655"),
+          fontsize_row = 8,
+          color = myColor,
+          breaks = myBreaks,
+          main = "Log2 Fold Change\npadj <= 0.05 & |log2FC| >= 1\nGenes significant in both LF82 and MG1655")
+
+print(p6.heatmap)
+
+ggsave2(filename = "Log2FC_heatmap_sign_both.pdf", plot = p6.heatmap, path = "./Plots", width = 4, height = 7)
+
+# Filter out strain-specific genes 
+keep_genes_in_both <- c(! is.na(res_LF82_MG1655_merged$LF82_IDs) & ! is.na(res_LF82_MG1655_merged$MG1655))
+res_LF82_MG1655_merged_in_both <- res_LF82_MG1655_merged[keep_genes_in_both, ]
+
+res_LF82_MG1655_merged_in_both.sig_any <- subset(res_LF82_MG1655_merged_in_both, (padj.x <= 0.05 & abs(log2FoldChange.x) >= 1) | (padj.y <= 0.05 & abs(log2FoldChange.y) >= 1) )
+
+# Set colors for heatmap
+my_matrix <- dplyr::select(res_LF82_MG1655_merged_in_both.sig_any, c("log2FoldChange.x","log2FoldChange.y"))
+
+paletteLength <- 50
+myBreaks <- c(seq(min(my_matrix), 0, length.out=ceiling(paletteLength/2) + 1), 
+              seq(max(my_matrix)/paletteLength, max(my_matrix), length.out=floor(paletteLength/2)))
+myColor <- colorRampPalette(c("navy", "white", "firebrick3"))(paletteLength)
+
+p7.heatmap <- pheatmap(dplyr::select(res_LF82_MG1655_merged_in_both.sig_any, c("log2FoldChange.x","log2FoldChange.y")), 
+          cluster_rows=TRUE, 
+          show_rownames=TRUE,
+          cluster_cols=FALSE, 
+          labels_row=res_LF82_MG1655_merged_in_both.sig_any$Gene_name.y,
+          labels_col=c("LF82","MG1655"),
+          fontsize_row = 8,
+          color = myColor,
+          breaks = myBreaks,
+          main = "Log2 Fold Change\npadj <= 0.05 & |log2FC| >= 1\nOrthologous genes significant in either LF82 or MG1655")
+
+print(p7.heatmap)
+
+ggsave2(filename = "Log2FC_heatmap_orthologous_sign_either.pdf", plot = p7.heatmap, path = "./Plots", width = 7, height = 25)
+```
+
+#### dotplot using Log2FC
+```{r}
+# Generate first plot with all genes
+my_title <- "Log2(Fold Change) of differential gene expression\nLF82-WT/LF82-Mut and MG1655-Mut/MG1655-WT"
+
+df <- res_LF82_MG1655_merged
+
+df$pvalue.x[is.na(df$pvalue.x)] <- 1
+df$pvalue.y[is.na(df$pvalue.y)] <- 1
+df$min_pval <- apply(dplyr::select(df,c("padj.x","padj.y")), 1, function(x){ min(x)})
+df <- df[order(df$min_pval, decreasing = T),]
+df$significance <- as.factor(apply(dplyr::select(df,c("padj.x","padj.y")), 1, function(x){ ifelse( (x[1] <= 0.05 & x[2] <= 0.05), "Sig both", ifelse( (x[1] <= 0.05), "Sig LF82", ifelse( (x[2] <= 0.05), "Sig MG1655","N.S."))) }))
+
+myColor <- c("N.S."="gray","Sig both"="orange3","Sig LF82"="green4","Sig MG1655"="yellow3")
+
+p3 <- ggplot(df, aes(x=log2FoldChange.x, y=log2FoldChange.y, label = Gene_name.x)) + 
+  labs(title = my_title) +
+  xlab(bquote('LF82 '* ~Log[2]*'(Fold Change)')) +
+  ylab(bquote('MG1655 '* ~Log[2]*'(Fold Change)')) +
+  geom_point(aes(colour=significance), size = 0.5, alpha = 1 ) + 
+  ylim(min(df$log2FoldChange.y),max(df$log2FoldChange.y)) + 
+  xlim(min(df$log2FoldChange.x),max(df$log2FoldChange.x)) +
+  geom_abline(slope = 1, intercept = 0, col = "black", size=0.5, linetype="dashed") +
+  theme_minimal() + scale_colour_manual(values = myColor) +
+  theme(
+    legend.direction = "vertical",  
+    legend.position = c(.95, .10),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(3, 3, 3, 3),
+    legend.text = element_text(size = 8),
+    legend.title = element_text(face = "bold" ,size = 8, vjust = 0.9))
+
+p3 <-  p3 + guides(color = guide_legend(override.aes = list(size = 5)))
+
+# Change legend title
+p3$labels$colour = paste("Significance" )
+
+# Making genes of interest bigger
+#genes_of_interesst <- ifelse(df$Log2_pICWT_pICKO > 4 | df$Log2_pICWT_pICKO < -2,  as.character(df$Gene_symbols),NA)
+my_list <- genes_of_interest.names$gene_name
+#genes_of_interest <- ifelse(df$Gene_name.y %in% my_list,  as.character(df$Gene_name.y),NA)
+
+
+df.subset <- subset(df, Gene_name.y %in% my_list)
+
+
+p3 <- p3 + geom_point(data = df.subset, aes(x = log2FoldChange.x, y = log2FoldChange.y, fill=significance), size = 3, pch=21, colour="black", show.legend = FALSE) + scale_fill_manual(values = myColor) 
+ggsave2(filename = "Log2FC_dotplot_no_labels.pdf", plot = p3, path = "./Plots", width = 10, height = 10)
+
+genes_of_interest.tmp <- genes_of_interest[genes_of_interest %in% my_list]
+# Adding labels to genes of interest
+p3 <- p3 + geom_text_repel(data = df.subset, aes(label = genes_of_interest.tmp),
+                  colour = "black",
+                  label.size = 1,
+                  box.padding   = 0.4, 
+                  point.padding = 0.3,
+                  segment.color = 'black',
+                  na.rm = TRUE,
+                  size = 5,
+                  min.segment.length = 0.02,
+                  direction = "both",
+                  segment.curvature = -0.1,
+                  segment.ncp = 3,
+                  segment.angle = 20,
+                  max.iter = 1e5)
+
+ggsave2(filename = "Log2FC_dotplot.pdf", plot = p3, path = "./Plots", width = 10, height = 10)
+print(p3)
+```
+
+# Distributions
+```{r}
+p <- ggplot(all, aes(x = log2(all$LF82_WT_1+0.5))) + geom_histogram(binwidth = 1, fill = "green3") + xlim(0,25) + xlab("Log2(read counts + 0.5)") + ylab("Number of genes")
+p + theme_classic(base_size = 22)
+
+p1 <- ggplot(as.data.frame(res_WT_vs_Mut_LF82), aes(x = log2FoldChange)) + geom_histogram(binwidth = 0.1, fill = "blue3") + xlab("Log2FC") + ylab("Number of genes")
+p1 + theme_classic(base_size = 22)
+```
+
+```{r}
+log2fc_lf82_mg <- read.table(file = "./data/Log2FC_LF82_MG.txt", header = T, sep = "\t", row.names = 1)
+
+
+# Generate first plot with all genes
+my_title <- "Log2(Fold Change) of differential gene expression\nLF82-WT/LF82-Mut and MG1655-Mut/MG1655-WT"
+
+df <- log2fc_lf82_mg
+
+# Invert Log2FC for LF82 to reflect WT/Mut rather than the original data Mut/WT
+df$Log2FC_LF82 <- df$Log2FC_LF82 * -1
+
+# remove rows where Log2FC LF82/MG == NA
+df <- df[!c(is.na(df$Log2FC_MG) | is.na(df$Log2FC_LF82)), ]
+
+df$padj_LF82[is.na(df$padj_LF82)] <- 1
+df$padj_MG[is.na(df$padj_MG)] <- 1
+df$min_pval <- apply(dplyr::select(df,c("padj_LF82","padj_MG")), 1, function(x){ min(x)})
+df <- df[order(df$min_pval, decreasing = T),]
+df$significance <- as.factor(apply(dplyr::select(df,c("padj_LF82","padj_MG")), 1, function(x){ ifelse( (x[1] <= 0.05 & x[2] <= 0.05), "Sig both", ifelse( (x[1] <= 0.05), "Sig LF82", ifelse( (x[2] <= 0.05), "Sig MG1655","N.S."))) }))
+
+myColor <- c("N.S."="gray","Sig both"="orange3","Sig LF82"="green4","Sig MG1655"="yellow3")
+
+p4 <- ggplot(df, aes(x=Log2FC_LF82, y=Log2FC_MG, label = gene_name_MG)) + 
+  labs(title = my_title) +
+  xlab(bquote('LF82 '* ~Log[2]*'(Fold Change)')) +
+  ylab(bquote('MG1655 '* ~Log[2]*'(Fold Change)')) +
+  geom_point(aes(colour=significance), size = 1, alpha = 1 ) + 
+  ylim(-3.5,3.5) + #ylim(min(df$Log2FC_MG),max(df$Log2FC_MG)) + 
+  xlim(-3.5,3.5) + #xlim(min(df$Log2FC_LF82),max(df$Log2FC_LF82)) +
+  geom_abline(slope = 1, intercept = 0, col = "black", size=0.5, linetype="dashed") +
+  scale_x_continuous(breaks =c(-3,-2,-1,0,1,2,3)) +
+  scale_y_continuous(breaks =c(-3,-2,-1,0,1,2,3)) +
+  theme_minimal() + 
+  scale_colour_manual(values = myColor) +
+  theme(
+    legend.direction = "vertical",  
+    legend.position = c(.25, .95),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(3, 3, 3, 3),
+    legend.text = element_text(size = 8),
+    legend.title = element_text(face = "bold" ,size = 8, vjust = 0.9))
+
+p4 <-  p4 + guides(color = guide_legend(override.aes = list(size = 5)))
+
+# Change legend title
+p4$labels$colour = paste("Significance" )
+
+#genes_of_interest
+my_list <- genes_of_interest.names$gene_name
+
+df.subset <- subset(df, gene_name_MG %in% my_list)
+
+
+p4 <- p4 + geom_point(data = df.subset, 
+                      aes(x = Log2FC_LF82, y = Log2FC_MG, fill=significance), 
+                      size = 3, 
+                      pch=21, 
+                      colour="black", 
+                      show.legend = FALSE) + 
+            scale_fill_manual(values = myColor) 
+
+ggsave2(filename = "Log2FC_dotplot_from_orig_DE_no_labels.pdf", plot = p4, path = "./Plots", width = 10, height = 10)
+
+# Adding labels to genes of interest
+p4 <- p4 + geom_text_repel(data = df.subset, 
+                            aes(label = gene_name_MG),
+                            colour = "black",
+                            box.padding   = 0.4, 
+                            point.padding = 0.3,
+                            segment.color = 'black',
+                            na.rm = TRUE,
+                            size = 5,
+                            min.segment.length = 0.02,
+                            direction = "both",
+                            segment.curvature = -0.1,
+                            segment.ncp = 3,
+                            segment.angle = 20,
+                            max.iter = 1e5, 
+                            max.overlaps = 20)
+
+ggsave2(filename = "Log2FC_dotplot_from_orig_DE.pdf", plot = p4, path = "./Plots", width = 10, height = 10)
+p4
+
 ```
 
 
