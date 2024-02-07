@@ -15,4 +15,11 @@ cat MG_vs_LF82.bp| ./get_best_reciprocal_match.pl > best_reciprocal_match.txt
 xlookup.pl -d MG1655.names.txt -dri 2 -dqi 0 -i best_reciprocal_match.txt |xlookup.pl -d MG1655.names.txt -dri 3 -dqi 0| xlookup.pl -d LF82.names.txt -dri 1 -dqi 0 -ii 1 | xlookup.pl -d LF82.names.txt -dri 2 -dqi 0 -ii 1 > best_reciprocal_match_all.txt
 ```
 
-### Generate plots with 
+### Generate plots for manuscript
+
+Plots were generated with the following R scripts
+```
+TK_83_analysis.v1.Rmd
+```
+
+
